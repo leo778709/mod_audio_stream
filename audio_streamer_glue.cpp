@@ -813,6 +813,7 @@ extern "C" {
             if (frame) {               
                 switch_core_session_t* session = switch_core_media_bug_get_session(bug);
                 if (session) {
+                    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "switch_core_session_write_frame.\n");
                     return switch_core_session_write_frame(session, frame, SWITCH_IO_FLAG_NONE, 0) == SWITCH_STATUS_SUCCESS ? SWITCH_TRUE : SWITCH_FALSE;
                 }                
             }    

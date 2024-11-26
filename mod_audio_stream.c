@@ -45,6 +45,7 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
             break;
 
         case SWITCH_ABC_TYPE_WRITE:
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "SWITCH_ABC_TYPE_WRITE.\n");
             if (tech_pvt->close_requested) {
                 return SWITCH_FALSE;
             }
