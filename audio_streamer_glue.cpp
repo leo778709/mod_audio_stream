@@ -810,9 +810,11 @@ extern "C" {
                 return SWITCH_TRUE;
             }
             switch_frame_t* frame = pAudioStreamer->get_external_audio_frame();
-            if (frame) {
-                // 将音频数据写入媒体流
-                return switch_core_media_bug_write(bug, frame);
+            if (frame) {               
+                switch_core_session_t* session = switch_core_media_bug_get_session(bug);
+                if (session) {
+                    return switch_core_session_write_frame(session, frame, SWITCH_IO_FLAG_NONE, 0) == SWITCH_STATUS_SUCCESS ? SWITCH_TRUE : SWITCH_FALSE;
+                }                
             }    
             switch_mutex_unlock(tech_pvt->w_mutex);
         }
