@@ -316,7 +316,7 @@ public:
         return audio_buffer_.size();
     }
     
-    switch_frame_t* get_external_audio_data() {
+    switch_frame_t* get_external_audio_frame() {
         
         if (!has_audio_frame()) {
             return nullptr; // 如果没有数据，返回 nullptr
@@ -809,7 +809,7 @@ extern "C" {
                 switch_mutex_unlock(tech_pvt->w_mutex);
                 return SWITCH_TRUE;
             }
-            switch_frame_t* frame = get_external_audio_data();
+            switch_frame_t* frame = pAudioStreamer->get_external_audio_frame();
             if (frame) {
                 // 将音频数据写入媒体流
                 return switch_core_media_bug_write(bug, frame);
