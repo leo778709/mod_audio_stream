@@ -266,6 +266,16 @@ public:
     }
 
 
+    std::vector<uint8_t> decode_base64_to_bytes(const std::string& base64_data) {
+        // 使用 base64_decode 解码 Base64 字符串
+        std::string decoded_string = base64_decode(base64_data); // 移除换行符
+
+        // 将解码后的字符串转换为字节数组
+        std::vector<uint8_t> decoded_bytes(decoded_string.begin(), decoded_string.end());
+
+        return decoded_bytes;
+    }
+
     void receive_audio_data(const std::string& base64_data) {
         std::lock_guard<std::mutex> lock(mutex_);
         std::vector<uint8_t> audio_bytes = decode_base64_to_bytes(base64_data);
