@@ -305,13 +305,13 @@ public:
     }
 
     // 检查是否有可用的音频帧
-    bool has_audio_frame() const {
+    bool has_audio_frame()  {
         std::lock_guard<std::mutex> lock(mutex_);
         return !audio_buffer_.empty();
     }
 
     // 获取队列中的帧数
-    size_t get_frame_count() const {
+    size_t get_frame_count()  {
         std::lock_guard<std::mutex> lock(mutex_);
         return audio_buffer_.size();
     }
