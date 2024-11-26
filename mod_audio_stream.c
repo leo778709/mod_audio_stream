@@ -21,6 +21,8 @@ static void responseHandler(switch_core_session_t* session, const char* eventNam
 
 static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, switch_abc_type_t type)
 {
+    switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "switch_media_bug callback switch_abc_type: %s\n", switch_abc_type_t_to_string(type));
+
     switch_core_session_t *session = switch_core_media_bug_get_session(bug);
     private_t *tech_pvt = (private_t *)user_data;
 
@@ -36,6 +38,9 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
                 stream_session_cleanup(session, NULL, channelIsClosing);
             }
             break;
+        case SWITCH_ABC_TYPE_READ_REPLACE:
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "SWITCH_ABC_TYPE_READ_REPLACE.\n");
+            break;
 
         case SWITCH_ABC_TYPE_READ:
             if (tech_pvt->close_requested) {
@@ -43,13 +48,15 @@ static switch_bool_t capture_callback(switch_media_bug_t *bug, void *user_data, 
             }
             return stream_frame(bug);
             break;
-
-        case SWITCH_ABC_TYPE_WRITE:
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "SWITCH_ABC_TYPE_WRITE.\n");
+        case SWITCH_ABC_TYPE_WRITE_REPLACE:
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "SWITCH_ABC_TYPE_WRITE_REPLACE.\n");
             if (tech_pvt->close_requested) {
                 return SWITCH_FALSE;
             }
             return write_stream_frame(bug);
+            break;
+        case SWITCH_ABC_TYPE_WRITE:  
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO, "SWITCH_ABC_TYPE_WRITE.\n");
             break;
         default:
             break;
@@ -201,9 +208,9 @@ SWITCH_STANDARD_API(stream_function)
                     goto done;
                 }
                 if (0 == strcmp(argv[3], "mixed")) {
-                    flags |= SMBF_WRITE_STREAM;
+                    flags |= SMBF_WRITE_REPLACE;
                 } else if (0 == strcmp(argv[3], "stereo")) {
-                    flags |= SMBF_WRITE_STREAM;
+                    flags |= SMBF_WRITE_REPLACE;
                     flags |= SMBF_STEREO;
                 } else if (0 != strcmp(argv[3], "mono")) {
                     switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_ERROR,
