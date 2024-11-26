@@ -8,6 +8,8 @@
 #include <switch_buffer.h>
 #include <unordered_map>
 #include <unordered_set>
+#include <queue>
+#include <vector>
 #include "base64.h"
 #include "audio_streamer_glue.h"
 
@@ -204,7 +206,7 @@ public:
 
                 if(jsonAudio && jsonAudio->valuestring != nullptr && !fileType.empty()) {
                     char filePath[256];
-                    insert_audio_data(jsonAudio->valuestring);
+                    receive_audio_data(jsonAudio->valuestring);
                     std::string rawAudio = base64_decode(jsonAudio->valuestring);
                     switch_snprintf(filePath, 256, "%s%s%s_%d.tmp%s", SWITCH_GLOBAL_dirs.temp_dir,
                                     SWITCH_PATH_SEPARATOR, m_sessionId.c_str(), m_playFile++, fileType.c_str());
