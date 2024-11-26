@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "base64.h"
+#include "audio_streamer_glue.h"
 
 #define FRAME_SIZE_8000  320 /* 1000x0.02 (20ms)= 160 x(16bit= 2 bytes) 320 frame size*/
 
@@ -203,6 +204,7 @@ public:
 
                 if(jsonAudio && jsonAudio->valuestring != nullptr && !fileType.empty()) {
                     char filePath[256];
+                    insert_audio_data(jsonAudio->valuestring);
                     std::string rawAudio = base64_decode(jsonAudio->valuestring);
                     switch_snprintf(filePath, 256, "%s%s%s_%d.tmp%s", SWITCH_GLOBAL_dirs.temp_dir,
                                     SWITCH_PATH_SEPARATOR, m_sessionId.c_str(), m_playFile++, fileType.c_str());
@@ -261,6 +263,70 @@ public:
         }
     }
 
+
+    void receive_audio_data(const std::string& base64_data) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        std::vector<uint8_t> audio_bytes = decode_base64_to_bytes(base64_data);
+
+        // 假设每个音频帧的大小是固定的（例如：480字节）
+        constexpr size_t FRAME_SIZE = 480;  // 对于PCM16 24000Hz 单声道，20ms的数据
+
+        // 将数据按帧大小分割并存入队列
+        for (size_t i = 0; i < audio_bytes.size(); i += FRAME_SIZE) {
+            size_t chunk_size = std::min(FRAME_SIZE, audio_bytes.size() - i);
+            std::vector<uint8_t> frame(audio_bytes.begin() + i,
+                audio_bytes.begin() + i + chunk_size);
+            audio_buffer_.push(std::move(frame));  // 使用移动语义避免拷贝
+        }
+    }
+
+    // 获取一帧音频数据
+    std::vector<uint8_t> get_audio_frame() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (audio_buffer_.empty()) {
+            return std::vector<uint8_t>();  // 返回空vector而不是抛出异常
+        }
+
+        std::vector<uint8_t> frame = std::move(audio_buffer_.front());
+        audio_buffer_.pop();
+        return frame;  // 返回值优化（RVO）会避免额外拷贝
+    }
+
+    // 检查是否有可用的音频帧
+    bool has_audio_frame() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return !audio_buffer_.empty();
+    }
+
+    // 获取队列中的帧数
+    size_t get_frame_count() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return audio_buffer_.size();
+    }
+    
+    switch_frame_t* get_external_audio_data() {
+        
+        if (!has_audio_frame()) {
+            return nullptr; // 如果没有数据，返回 nullptr
+        }
+
+        // 创建 switch_frame_t 并填充 PCM16 音频数据
+        switch_frame_t* frame = (switch_frame_t*)malloc(sizeof(switch_frame_t));
+        frame->data = (void*)malloc(audio_buffer_.size());
+        frame->datalen = audio_buffer_.size();
+        std::vector<uint8_t> frame_data = get_audio_frame();
+        memcpy(frame->data, frame_data.data(), frame_data.size());
+
+        // 设置音频格式
+        frame->samples = frame->datalen / 2; //每个样本 2 字节
+        frame->rate = 24000; // 采样率
+        frame->channels = 1; // 单声道
+        frame->flags = SFF_CNG; //根据需要设置标志
+
+
+        return frame;
+    }
+
 private:
     std::string m_sessionId;
     responseHandler_t m_notify;
@@ -271,6 +337,8 @@ private:
     const char* m_extra_headers;
     int m_playFile;
     std::unordered_set<std::string> m_Files;
+    std::queue<std::vector<uint8_t>> audio_buffer_; // 存储音频数据的缓冲区
+    std::mutex mutex_; // 保护缓冲区的互斥锁
 };
 
 
@@ -333,6 +401,7 @@ namespace {
         tech_pvt->pAudioStreamer = static_cast<void *>(as);
 
         switch_mutex_init(&tech_pvt->mutex, SWITCH_MUTEX_NESTED, pool);
+        switch_mutex_init(&tech_pvt->w_mutex, SWITCH_MUTEX_NESTED, pool);
 
         if (desiredSampling != sampling) {
             if (switch_buffer_create(pool, &tech_pvt->sbuffer, buflen) != SWITCH_STATUS_SUCCESS) {
@@ -390,6 +459,10 @@ namespace {
         if (tech_pvt->mutex) {
             switch_mutex_destroy(tech_pvt->mutex);
             tech_pvt->mutex = nullptr;
+        }
+        if (tech_pvt->w_mutex) {
+            switch_mutex_destroy(tech_pvt->w_mutex);
+            tech_pvt->w_mutex = nullptr;
         }
         if (tech_pvt->pAudioStreamer) {
             auto* as = (AudioStreamer *) tech_pvt->pAudioStreamer;
@@ -592,6 +665,7 @@ extern "C" {
         return SWITCH_STATUS_SUCCESS;
     }
 
+
     switch_bool_t stream_frame(switch_media_bug_t *bug)
     {
         auto* tech_pvt = (private_t*) switch_core_media_bug_get_user_data(bug);
@@ -704,6 +778,35 @@ extern "C" {
         }
         return SWITCH_TRUE;
     }
+
+    switch_bool_t write_stream_frame(switch_media_bug_t* bug)
+    {
+        auto* tech_pvt = (private_t*)switch_core_media_bug_get_user_data(bug);
+        if (!tech_pvt || tech_pvt->audio_paused) return SWITCH_TRUE;
+
+        if (switch_mutex_trylock(tech_pvt->w_mutex) == SWITCH_STATUS_SUCCESS) {
+
+            if (!tech_pvt->pAudioStreamer) {
+                switch_mutex_unlock(tech_pvt->w_mutex);
+                return SWITCH_TRUE;
+            }
+
+            auto* pAudioStreamer = static_cast<AudioStreamer*>(tech_pvt->pAudioStreamer);
+
+            if (!pAudioStreamer->isConnected()) {
+                switch_mutex_unlock(tech_pvt->w_mutex);
+                return SWITCH_TRUE;
+            }
+            switch_frame_t* frame = get_external_audio_data();
+            if (frame) {
+                // 将音频数据写入媒体流
+                return switch_core_media_bug_write(bug, frame);
+            }    
+            switch_mutex_unlock(tech_pvt->w_mutex);
+        }
+        return SWITCH_TRUE;
+    }
+
 
     switch_status_t stream_session_cleanup(switch_core_session_t *session, char* text, int channelIsClosing) {
         switch_channel_t *channel = switch_core_session_get_channel(session);

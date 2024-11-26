@@ -20,6 +20,7 @@ typedef void (*responseHandler_t)(switch_core_session_t* session, const char* ev
 
 struct private_data {
     switch_mutex_t *mutex;
+    switch_mutex_t *w_mutex;
     char sessionId[MAX_SESSION_ID];
     SpeexResamplerState *resampler;
     responseHandler_t responseHandler;
